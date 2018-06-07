@@ -94,7 +94,7 @@ void authenticate(int socketFD)
 	int  valid = strncmp(buffer, "@@decryptionServer@@", 20);
 	if (valid != 0)
 	{
-		fprintf(stderr, "OTP_DEC CLIENT: Error-> You are not connecting to the correct server. Please connect to the super secret decryption server.\n");
+		fprintf(stderr, "OTP_DEC CLIENT: ERROR-> THERE'S A SPY! OTP_DEC tried to connect to OTP_ENC_D, the super secret encryption server. This is not allowed\n");
 		exit(2);
 	}
 }
@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
 	int socketFD, portNumber, charsWritten, charsRead;
 	struct sockaddr_in serverAddress;
 	struct hostent* serverHostInfo;
-	char buffer[1024];
+//	char buffer[1024];
     
 	if (argc != 4) { fprintf(stderr,"USAGE: %s [plaintext] [key] [port]\n", argv[0]); exit(0); } // Check usage & args
 

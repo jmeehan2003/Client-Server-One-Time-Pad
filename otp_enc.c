@@ -89,15 +89,12 @@ void authenticate(int socketFD)
 	char* auth = "@@encryption@@";
 	int authSize = strlen(auth);
 	sendMsg(socketFD, auth, authSize);
-//	printf("did we make it here?\n");
 	char buffer[20];
 	receiveMsg(socketFD, buffer, 20);
-//	printf( "Auth client: %s\n", buffer);
 	int valid = strncmp(buffer, "@@encryptionServer@@", 20);
-//	printf("%d\n", valid);
 	if (valid != 0)
 	{
-		fprintf(stderr, "CLIENT: Error-> You are not connecting to the correct server. Please connect to the super secret encryption server.\n");
+		fprintf(stderr, "CLIENT: Error-> THERE'S A SPY! OTP_ENC tried to connect to OTP_DEC_D, the super secret decryption server. This is not allowed.\n");
 		exit(2);
 	}
 }

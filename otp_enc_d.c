@@ -82,7 +82,6 @@ int authenticate(int sock)
 //	printf("AUTH: Received %s from client\n", buffer); 
 	if (strcmp(buffer, "@@encryption@@") != 0)
 	{
-		fprintf(stderr, "SERVER: Error-> A spy is trying to connect to the super secret encryption server\n");
 		char* bad = "@@@@@@nice try@@@@@@";
 		send(sock, bad, 20, 0);
 		return 0;
@@ -122,79 +121,55 @@ int main(int argc, char *argv[])
 		error("ERROR on binding");
 	listen(listenSocketFD, 5); // Flip the socket on - it can now receive up to 5 connections
 
-	
-	
-	// Accept a connection, blocking if one is not available until one connects
 	while (1)
 	{
 		sizeOfClientInfo = sizeof(clientAddress); // Get the size of the address for the client that will connect
 		newSocketFD = accept(listenSocketFD, (struct sockaddr *)&clientAddress, &sizeOfClientInfo); // Accept
-		if (newSocketFD < 0) error("ERROR on accept");
-		printf("SERVER: Connected Client at port %d\n", ntohs(clientAddress.sin_port));
-		
-		//authenticate connection
-		if(!(authenticate(newSocketFD)))
-			continue;
+		if (newSocketFD < 0) { fprintf(stderr, "ERROR on accept\n"); exit(1); }		
 
+		// create a child process
+		pid_t pid = fork();
+		if (pid < 0)
+		{
+			fprintf(stderr, "Error on fork\n");
+			exit(1);
+		}
 
-		char* text;
-		char* key;
-	//	int msgCount = 0;
-	//	while (msgCount < 2)
-	//	{
+		// sucessful fork
+		if (pid == 0)
+		{
+			//authenticate connection
+			if(!(authenticate(newSocketFD)))
+				continue;
+
+			char* text;
+			char* key;
 				
-			// Get the message from the client and display it
-			// get file size from client
+			// get plaintext file from client
 			int msgSize = receiveSize(newSocketFD);
-//			printf("SERVER: the message size is %d\n", msgSize);
 			text = malloc(msgSize);
 			receiveMsg(newSocketFD, text, msgSize);
-//			printf("SERVER: I received this from the client: \"%s\"\n", text);
 
+			// get key file from client
 			msgSize = receiveSize(newSocketFD);
-//			printf("SERVER: the key message size is %d\n", msgSize);
 			key = malloc(msgSize);
 			receiveMsg(newSocketFD, key, msgSize);
-			//memset(buffer, '\0', fileSize);
-			//charsRead = recv(newSocketFD, buffer, fileSize, 0); // Read the client's message from the socket
-			//if (charsRead < 0) error("ERROR reading from socket");
-//			printf("SERVER: I received this from the client: \"%s\"\n", key);
-	/*		if (msgCount == 0)
-			{
-				text = malloc(charsRead);
-				strcpy(text, buffer);
-			}
-			else
-			{
-				key = malloc(charsRead);
-				strcpy(key, buffer);
-			}
 						
-	*/		
-			// Send a Success message back to the client
-//			charsRead = send(newSocketFD, "I received your files", 22, 0);
-			
-	//		msgCount++;
-		//	printf("msgcount: %d", msgCount);
-	//	}
-		encryptMsg(text, key);
-		int textSize = strlen(text);
-		charsRead = send(newSocketFD, text, textSize, 0); // Send success back
-		if (charsRead < 0) error("ERROR writing to socket");
-	   	
-		/*printf("we got here\n");
-		int i, j;
-		int length = strlen(text);
-		for (i = 0; i < length; i++)
-			printf("%c ", text[i]);
-		printf("\n");
-		for (j = 0; j < length; j++)
-			printf("%c ", key[j]);
-		printf("\n");
-		*/
-		close(newSocketFD); // Close the existing socket which is connected to the client
-	}
+			// use key to encrypt the plaintext
+			encryptMsg(text, key);
 
+			// send the encrypted file back to the client
+			int textSize = strlen(text);
+			charsRead = send(newSocketFD, text, textSize, 0); 
+			if (charsRead < 0) error("ERROR writing to socket");
+	   	
+			// clean up and close socket b efore child exit
+			free(text);
+			free(key);
+			close(newSocketFD); // Close the existing socket which is connected to the client
+			_exit(0);
+		}
+	}
 
 	close(listenSocketFD); // Close the listening socket
 	return 0; 

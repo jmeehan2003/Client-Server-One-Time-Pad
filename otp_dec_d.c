@@ -49,8 +49,7 @@ void decryptMsg(char *msg, char* key)
 	
 	for (i = 0; i < length; i++)
 	{
-		msgNum = (int)msg[i];
-//		printf("textnum: %c %d", msg[i], msgNum); 
+		msgNum = (int)msg[i]; 
 		if (msgNum == 32)
 			msgNum = 91;
 		msgNum -= 65;		
@@ -69,7 +68,6 @@ void decryptMsg(char *msg, char* key)
 			decryptedNum = 32;
 		
 		msg[i] = decryptedNum; 
-//		printf("cipher: %c,  msg[i]: %c \n", cipherNum, msg[i]);
 	}
 
 	msg[i] = '\0';
@@ -83,7 +81,6 @@ int authenticate(int sock)
 	receiveMsg(sock, buffer, 14);
 	if (strcmp(buffer, "@@decryption@@") != 0)
 	{
-		fprintf(stderr, "SERVER: Error-> A spy is trying to connect to the super secret decryption server. Connection terminated.\n");
 		char* bad = "@@@@@@nice try@@@@@@";
 		send(sock, bad, 20, 0);
 		return 0;
@@ -122,78 +119,56 @@ int main(int argc, char *argv[])
 	if (bind(listenSocketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0) // Connect socket to port
 		error("ERROR on binding");
 	listen(listenSocketFD, 5); // Flip the socket on - it can now receive up to 5 connections
-
-
 	
-	// Accept a connection, blocking if one is not available until one connects
 	while (1)
 	{
 		sizeOfClientInfo = sizeof(clientAddress); // Get the size of the address for the client that will connect
 		newSocketFD = accept(listenSocketFD, (struct sockaddr *)&clientAddress, &sizeOfClientInfo); // Accept
 		if (newSocketFD < 0) error("ERROR on accept");
-		printf("SERVER: Connected Client at port %d\n", ntohs(clientAddress.sin_port));
 
-		authenticate(newSocketFD);
-		char* cipherText;
-		char* key;
-	//	int msgCount = 0;
-	//	while (msgCount < 2)
-	//	{
-				
-			// Get the message from the client and display it
-			// get file size from client
+		// create a child process
+		pid_t pid = fork();
+		if (pid < 0)
+		{
+			fprintf(stderr, "Error on fork\n");
+			exit(1);
+		}
+
+		// sucessful fork
+		if (pid == 0)
+		{		
+			// authenicate connection
+			if(!(authenticate(newSocketFD)))
+				continue;
+
+			char* cipherText;
+			char* key;
+		
+			// get ciphertext file from client
 			int msgSize = receiveSize(newSocketFD);
-//			printf("SERVER: the message size is %d\n", msgSize);
 			cipherText = malloc(msgSize);
 			receiveMsg(newSocketFD, cipherText, msgSize);
-//			printf("SERVER: I received this from the client: \"%s\"\n", text);
 
+			// get key file from client
 			msgSize = receiveSize(newSocketFD);
-//			printf("SERVER: the key message size is %d\n", msgSize);
 			key = malloc(msgSize);
 			receiveMsg(newSocketFD, key, msgSize);
-			//memset(buffer, '\0', fileSize);
-			//charsRead = recv(newSocketFD, buffer, fileSize, 0); // Read the client's message from the socket
-			//if (charsRead < 0) error("ERROR reading from socket");
-//			printf("SERVER: I received this from the client: \"%s\"\n", key);
-	/*		if (msgCount == 0)
-			{
-				text = malloc(charsRead);
-				strcpy(text, buffer);
-			}
-			else
-			{
-				key = malloc(charsRead);
-				strcpy(key, buffer);
-			}
-						
-	*/		
-			// Send a Success message back to the client
-//			charsRead = send(newSocketFD, "I received your files", 22, 0);
-	//		if (charsRead < 0) error("ERROR writing to socket");
-			
-	//		msgCount++;
-		//	printf("msgcount: %d", msgCount);
-	//	}
-		decryptMsg(cipherText, key);
-		int decryptedSize = strlen(cipherText);
-		charsRead = send(newSocketFD, cipherText, decryptedSize, 0); // Send success back
 		
-		/*printf("we got here\n");
-		int i, j;
-		int length = strlen(text);
-		for (i = 0; i < length; i++)
-			printf("%c ", text[i]);
-		printf("\n");
-		for (j = 0; j < length; j++)
-			printf("%c ", key[j]);
-		printf("\n");
-		*/
-		free(cipherText);
-		free(key);
-		close(newSocketFD); // Close the existing socket which is connected to the client
-	}
+			// use dey to decrypt the ciphertext
+			decryptMsg(cipherText, key);
 
+			// send the decrypted file back to the client
+			int decryptedSize = strlen(cipherText);
+			charsRead = send(newSocketFD, cipherText, decryptedSize, 0); 
+			if (charsRead < 0) error("ERROR writing to socket");
+		
+			// clean up and close socket before child exit
+			free(cipherText);
+			free(key);
+			close(newSocketFD); // Close the existing socket which is connected to the client
+			_exit(0);
+		}
+	}
 
 	close(listenSocketFD); // Close the listening socket
 	return 0; 
