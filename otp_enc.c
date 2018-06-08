@@ -1,3 +1,11 @@
+/********************************************************************************
+** Author: James Meehan
+** Date: 6/7/2018
+** Description: This is the encryption client program for a one time pad. The client
+** sends a plaintext file and a key file to the encryption server and receives a 
+** ciphertext file back.
+***********************************************************************************/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -12,31 +20,7 @@
 
 
 void error(const char *msg) { perror(msg); exit(0); } // Error function used for reporting issues
-int getFileSize(char* file)
-{	
-	FILE* fptr;
-	char* data;
-	int size;	
-	fptr = fopen(file, "r");
-	if (fptr == NULL)
-	{
-		fprintf(stderr, "Error opening file: %s\n", file); 
-		return 0;
-	}
-	else
-	{
-		int c;
-		size_t n = 0;
-		fseek(fptr, 0, SEEK_END);
-		size = ftell(fptr);
-		fclose(fptr);
-
-//		printf("Size of %s: %d bytes.\n", file, size);
-		return size;
-	} 
-
-}
-
+int getFileSize(char* file);
 void sendNum(int socket, int num)
 {
 	ssize_t a = 0;
@@ -279,17 +263,40 @@ int main(int argc, char *argv[])
 	exit(0);
 }
 
+/********************************************************************
+** Description: getFileSize() takes a filename as a parameter and
+** returns the size of that file
+********************************************************************/
 
-// ssize_t send(int sockfd, void *message, size_t message_size, int flags);
-// char msg[1024];
-// r = send(socketFD, msg, 1024, 0);
-// if (r < 1024)
-// 	{ handle possible error }
-//
-// ssize_t recv(in sockfd, void *buffer, size_t buffer_size, int flags);
-//
-// char buffer[1024];
-// memset(buffer, '\0', sizeof(buffer));
-// r = recv(socketFD, buffer, sizeof(buffer) - 1, 0);
-// if (r < sizeof(buffer) - 1)
-// 	{ handle possible error };
+int getFileSize(char* file)
+{	
+	FILE* fptr;
+	char* data;
+	int size;	
+	
+	// open the file for reading
+	fptr = fopen(file, "r");
+	if (fptr == NULL)
+	{
+		fprintf(stderr, "Error opening file: %s\n", file); 
+		return 0;
+	}
+	else
+	{
+		int c;
+		size_t n = 0;
+		
+		// go to the end of the file
+		fseek(fptr, 0, SEEK_END);
+		
+		// get the size of the file in bytes.  ftell provides the 
+		// position of the file relative to the start of the file
+		size = ftell(fptr);
+
+		//close the file and return size
+		fclose(fptr);
+		return size;
+	} 
+
+}
+
