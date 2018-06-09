@@ -1,3 +1,16 @@
+/********************************************************************************
+** Author: James Meehan
+** Date: 6/7/2018
+** Description: This is the decryption client program for a one time pad. The client
+** sends a ciphertext file and a key file to the decryption server and receives a 
+** ciphertext file back.
+**
+** These sources were used to help create this program **
+** https://beej.us/guide/bgnet/
+** http://www.linuxhowtos.org/C_C++/socket.htm
+** Other sources providing more specific help may be cited within the function description
+***********************************************************************************/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -12,100 +25,18 @@
 
 
 void error(const char *msg) { perror(msg); exit(0); } // Error function used for reporting issues
-int getFileSize(char* file)
-{	
-	FILE* fptr;
-	char* data;
-	int size;	
-	fptr = fopen(file, "r");
-	if (fptr == NULL)
-	{
-		fprintf(stderr, "Error opening file: %s\n", file); 
-		return 0;
-	}
-	else
-	{
-		int c;
-		size_t n = 0;
-		fseek(fptr, 0, SEEK_END);
-		size = ftell(fptr);
-		fclose(fptr);
-
-//		printf("Size of %s: %d bytes.\n", file, size);
-		return size;
-	} 
-
-}
-
-void sendNum(int socket, int num)
-{
-	ssize_t a = 0;
-	a = write(socket, &num, sizeof(int));
-	if (a < 0)
-	{
-		fprintf(stderr, "Error: Unable to receive number through socket\n");
-	}
-}
-
-void sendMsg(int socketFD, char* msg, long size)
-{
-	ssize_t bytesSent = 0;
-	while(bytesSent < size)
-	{
-		ssize_t temp; 
-		if ((temp = send(socketFD, msg, size, 0)) < 0)
-		{
-			fprintf(stderr, "Error sending data\n");
-			return;
-		}
-
-		bytesSent += temp;
-	}
-}	
-
-void receiveMsg(int socket, char* msg, size_t size)
-{
-	char buffer[size + 1];
-	ssize_t a;
-	size_t total = 0;
-
-	while (total < size)
-	{
-		a = read(socket, buffer + total, size - total);
-		total += a;
-
-		if (a < 0)
-		{
-			fprintf(stderr, "Error: failed to receive message from client\n");
-		}
-//		printf("total: %d, size: %d\n", total, size);
-	}
-
-	strncpy(msg, buffer, size);
-}
-
-void authenticate(int socketFD)
-{
-	char* auth = "@@decryption@@";
-	int authSize = strlen(auth);
-	sendMsg(socketFD, auth, authSize);
-	char buffer[20];
-	receiveMsg(socketFD, buffer, 20);
-	int  valid = strncmp(buffer, "@@decryptionServer@@", 20);
-	if (valid != 0)
-	{
-		fprintf(stderr, "OTP_DEC CLIENT: ERROR-> THERE'S A SPY! OTP_DEC tried to connect to OTP_ENC_D, the super secret encryption server. This is not allowed\n");
-		exit(2);
-	}
-}
+void authenticate(int socketFD);
+int getFileSize(char* file);
+void sendNum(int socket, int num);
+void sendMsg(int socketFD, char* msg, int size);
+void receiveMsg(int socket, char* msg, size_t size);
 
 
 int main(int argc, char *argv[])
 {
-	int socketFD, portNumber, charsWritten, charsRead;
+	int socketFD, portNumber, kSize, cSize, charsWritten, charsRead;
 	struct sockaddr_in serverAddress;
 	struct hostent* serverHostInfo;
-//	char buffer[1024];
     
 	if (argc != 4) { fprintf(stderr,"USAGE: %s [plaintext] [key] [port]\n", argv[0]); exit(0); } // Check usage & args
 
@@ -132,22 +63,20 @@ int main(int argc, char *argv[])
 	// authenticate
 	authenticate(socketFD);
 	
-
-	int kSize, tSize;
-
-	tSize = getFileSize(argv[1]);
+	// get the size of the cipher and key files
+	cSize = getFileSize(argv[1]);
 	kSize = getFileSize(argv[2]);
-	if (kSize < tSize)
+	if (kSize < cSize)
 	{
 		fprintf(stderr, "Error: key file is shorter than text file\n");
 		exit(1);
 	}
 	
-	FILE *keyPtr, *textPtr;
-	char* text;
+	FILE *keyPtr, *ciphertextPtr;
+	char* ciphertext;
 	char* key;
-	// get size of key file 
-	// Source: http://www.cplusplus.com/reference/cstdio/ftell/
+
+	// check key file for invalid characters 
 	// Source: stackoverflow.com/questions/4823177/reading-a-file-character-by-character-in-c/
 	keyPtr = fopen(argv[2], "r");
 	if (keyPtr == NULL) 
@@ -159,7 +88,12 @@ int main(int argc, char *argv[])
 	{
 		int c;
 		size_t n = 0;
+
+		// go the beginning of the file
 		fseek(keyPtr, 0, SEEK_SET);
+		
+		// go character by character by character. if it is a valid character, put it in the 
+		// key array. otherwise, print error message and exit with a value of 1
 		key = malloc(kSize);
 		while ((c = fgetc(keyPtr)) != EOF)
 		{
@@ -170,18 +104,22 @@ int main(int argc, char *argv[])
 			}
 			else
 			{	
-				fprintf(stderr, "Invalid character in key file\n");
+				fprintf(stderr, "ERROR: Invalid character in key file (%s)\n", argv[2]);
 				exit(1);
 			}
 		}
+
+		// remove newline character
 		if(key[kSize - 1] == '\n')
 			key[kSize - 1] = '\0';
+
+		// close file
 		fclose(keyPtr);
 	} 
 
-	//get size of text 
-	textPtr = fopen(argv[1], "r");
-	if (textPtr == NULL) 
+	// check ciphertext file for invalid characters
+	ciphertextPtr = fopen(argv[1], "r");
+	if (ciphertextPtr == NULL) 
 	{ 
 		fprintf(stderr, "Error opening text file\n"); 
 		exit(0); 
@@ -190,108 +128,193 @@ int main(int argc, char *argv[])
 	{
 		int c;
 		size_t n = 0;
-		fseek(textPtr, 0, SEEK_SET);
-		text = malloc(tSize);
-		while ((c = fgetc(textPtr)) != EOF)
+
+		// go the beginning of the file
+		fseek(ciphertextPtr, 0, SEEK_SET);
+
+		// go character by character by character. if it is a valid character, put it in the 
+		// ciphertext array. otherwise, print error message and exit with a value of 1
+		ciphertext = malloc(cSize);
+		while ((c = fgetc(ciphertextPtr)) != EOF)
 		{
 			if (isspace(c) || isalpha(c))
 			{
-				text[n] = (char)c;
+				ciphertext[n] = (char)c;
 				n++;
 			}
 			else
 			{	
-				fprintf(stderr, "Invalid character in text file\n");
+				fprintf(stderr, "ERRO: Invalid character in ciphertext file (%s)\n", argv[1]);
 				exit(1);
 			}
 		}
-		if(text[tSize - 1] == '\n')
-			text[tSize - 1] = '\0';
-		fclose(textPtr);
+
+		// remove newline character
+		if(ciphertext[cSize - 1] == '\n')
+			ciphertext[cSize - 1] = '\0';
+
+		// close file
+		fclose(ciphertextPtr);
 	} 
 
+	// send ciphertext file size to server	
+	sendNum(socketFD, cSize);
 
-	
+	// send ciphertext to server
+	sendMsg(socketFD, ciphertext, cSize);
 
-//	DEBUG
-/*	printf("Up to debug\n");
-	int i, j;
-	for (i = 0; i < kSize; i++)
-		printf("%c ", key[i]);
-	printf("\n");
-
-	for (j = 0; j < tSize; j++)
-		printf("%c ", text[j]);
-	printf("\n");
-*/	
-
-	// Get input message from user
-/*	printf("CLIENT: Enter text to send to the server, and then hit enter: ");
-	memset(buffer, '\0', sizeof(buffer)); // Clear out the buffer array
-	fgets(buffer, sizeof(buffer) - 1, stdin); // Get input from the user, trunc to buffer - 1 chars, leaving \0
-	buffer[strcspn(buffer, "\n")] = '\0'; // Remove the trailing \n that fgets adds
-
-	// Send message to server
-	charsWritten = send(socketFD, buffer, strlen(buffer), 0); // Write to the server
-	if (charsWritten < 0) error("CLIENT: ERROR writing to socket");
-	if (charsWritten < strlen(buffer)) printf("CLIENT: WARNING: Not all data written to socket!\n");
-*/
-	sendNum(socketFD, tSize);
-	sendMsg(socketFD, text, tSize);
-/*	memset(buffer, '\0', sizeof(buffer)); // Clear out the buffer again for reuse
-	charsRead = recv(socketFD, buffer, sizeof(buffer) - 1, 0); // Read data from the socket, leaving \0 at end
-	if (charsRead < 0) error("CLIENT: ERROR reading from socket");
-	printf("CLIENT: I received this from the server: \"%s\"\n", buffer);
-*/
-//	printf("did we make it here?\n");
+	// send key file size to server
 	sendNum(socketFD, kSize);
-	sendMsg(socketFD, key, kSize);
-/*	memset(buffer, '\0', sizeof(buffer)); // Clear out the buffer again for reuse
-	charsRead = recv(socketFD, buffer, sizeof(buffer) - 1, 0); // Read data from the socket, leaving \0 at end
-	if (charsRead < 0) error("CLIENT: ERROR reading from socket");
-	printf("CLIENT: I received this from the server: \"%s\"\n", buffer);
-*/
-/*
-	ssize_t bytesSent = 0;
-	while(bytesSent < tSize)
-	{
-		ssize_t temp; 
-		if ((temp = send(socketFD, text, tSize, 0)) < 0)
-		{
-			fprintf(stderr, "Error sending data\n");
-			exit(1);
-		}
 
-		bytesSent += temp;	
-	}	*/
-	// Get encrypted message from server
-	char* decryptedMsg = malloc(tSize);
-	receiveMsg(socketFD, decryptedMsg, tSize - 1);
-	/*memset(buffer, '\0', sizeof(buffer)); // Clear out the buffer again for reuse
-	charsRead = recv(socketFD, buffer, sizeof(buffer) - 1, 0); // Read data from the socket, leaving \0 at end
-	if (charsRead < 0) error("CLIENT: ERROR reading from socket");*/
+	// send key to server
+	sendMsg(socketFD, key, kSize);
+
+	// receive decrypted message back from the server
+	char* decryptedMsg = malloc(cSize);
+	receiveMsg(socketFD, decryptedMsg, cSize - 1);
+
+	// print decrypted message to stdout
 	printf("%s", decryptedMsg);
 	printf("\n");
 
-
-	free(text);
+	// clena up memory, close the socket, and exit
+	free(ciphertext);
 	free(key);
 	free(decryptedMsg);
-	close(socketFD); // Close the socket
+	close(socketFD); 
 	return 0;
 }
 
+/*************************************************************************
+** Description: authenticate() takes a socket as a parameter and sends
+** an authentication message to the server.  If the server sends back the
+** appropriate response, then the program has connected to the decryption 
+** server.  Otherwise, the connection is to unauthorized server and should
+** be rejected.
+**************************************************************************/
+void authenticate(int socketFD)
+{
+	// handshake process with server
+	// create authentication message
+	char* auth = "@@decryption@@";
+	int authSize = strlen(auth);
 
-// ssize_t send(int sockfd, void *message, size_t message_size, int flags);
-// char msg[1024];
-// r = send(socketFD, msg, 1024, 0);
-// if (r < 1024)
-// 	{ handle possible error }
-//
-// ssize_t recv(in sockfd, void *buffer, size_t buffer_size, int flags);
-//
-// char buffer[1024];
-// memset(buffer, '\0', sizeof(buffer));
-// r = recv(socketFD, buffer, sizeof(buffer) - 1, 0);
-// if (r < sizeof(buffer) - 1)
-// 	{ handle possible error };
+	// send authentication message
+	sendMsg(socketFD, auth, authSize);
+
+	// receive message back from server
+	char buffer[20];
+	receiveMsg(socketFD, buffer, 20);
+
+	// compare server response to authentication key and reject if not a match
+	int valid = strncmp(buffer, "@@decryptionServer@@", 20);
+	if (valid != 0)
+	{
+		fprintf(stderr, "CLIENT: Error-> THERE'S A SPY! OTP_DEC tried to connect to OTP_ENC_D, the super secret encryption server. This is not allowed.\n");
+		exit(2);
+	}
+}
+
+/********************************************************************
+** Description: getFileSize() takes a filename as a parameter and
+** returns the size of that file
+// Source: http://www.cplusplus.com/reference/cstdio/ftell/
+********************************************************************/
+int getFileSize(char* file)
+{	
+	FILE* fptr;
+	char* data;
+	int size;	
+	
+	// open the file for reading
+	fptr = fopen(file, "r");
+	if (fptr == NULL)
+	{
+		fprintf(stderr, "Error opening file: %s\n", file); 
+		return 0;
+	}
+	else
+	{
+		int c;
+		size_t n = 0;
+		
+		// go to the end of the file
+		fseek(fptr, 0, SEEK_END);
+		
+		// get the size of the file in bytes.  ftell provides the 
+		// position of the file relative to the start of the file
+		size = ftell(fptr);
+
+		//close the file and return size
+		fclose(fptr);
+		return size;
+	} 
+}
+
+/********************************************************************
+** Description: sendNum() takes a socket and integer as parameters
+** and sends the number over the socket. This function is primarily
+** used to send the size of a file to the server.
+********************************************************************/
+void sendNum(int socket, int num)
+{
+	ssize_t a = 0;
+	a = write(socket, &num, sizeof(int));
+	if (a < 0)
+	{
+		fprintf(stderr, "Error: Unable to receive number through socket\n");
+	}
+}
+
+/********************************************************************
+** Description: sendMsg() takes a socket, a message, and the size of 
+** that message as parameters.  The function continues until the full
+** size is sent or an error occurs.
+*********************************************************************/
+void sendMsg(int socketFD, char* msg, int size)
+{
+	ssize_t bytesSent = 0;
+
+	// send while bytesSent is less than the size of the file
+	while(bytesSent < size)
+	{
+		ssize_t temp; 
+		if ((temp = send(socketFD, msg, size, 0)) < 0)
+		{
+			fprintf(stderr, "Error sending data\n");
+			return;
+		}
+
+		bytesSent += temp;
+	}
+}	
+
+/*********************************************************************
+** Description: receiveMsg() takes a socket, message, and size as 
+** parameters and continues until the ful message is received or an
+** error occurs.
+*********************************************************************/
+void receiveMsg(int socket, char* msg, size_t size)
+{
+	char buffer[size + 1];
+	ssize_t a;
+	size_t total = 0;
+
+	// receive while total is less than the size of the file
+	while (total < size)
+	{
+		a = read(socket, buffer + total, size - total);
+		total += a;
+
+		if (a < 0)
+		{
+			fprintf(stderr, "Error: failed to receive message from client\n");
+			return;
+		}
+	}
+
+	// copy the message from the buffer to msg array
+	strncpy(msg, buffer, size);
+}
+
+

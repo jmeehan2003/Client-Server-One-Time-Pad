@@ -1,3 +1,10 @@
+/*****************************************************************************
+** Author: James Meehan
+** Date: 6/7/2018
+** Description: This program generates a random key for a one time pad and 
+** sends it to stdout.
+******************************************************************************/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
